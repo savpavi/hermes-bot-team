@@ -1,0 +1,26 @@
+#!/bin/bash
+# Run Google's Antigravity CLI (agy) on the desktop from the server, using the desktop's
+# signed-in Google AI Pro session. One-shot, plain-text output.
+#
+#   pc-agy "prompt" [model]        default model: $AGY_MODEL or "Gemini 4 Neon (Medium)"
+#   pc-agy --models                list model display names
+#
+# Env: AGY_HOST (ssh host of the desktop, default "desktop"), AGY_BIN (default ~/.local/bin/agy),
+#      PC_AGY_TIMEOUT (agy --print-timeout, default 5m).
+#
+# Why the env juggling: agy notices the SSH session and switches to file-based token storage,
+# which is empty, so it says "please sign in" even though the desktop is signed in. Dropping the
+# SSH_* variables and pointing at the desktop's session bus makes it use the keyring login.
+#
+# This calls the official binary; it does not extract or reuse OAuth tokens elsewhere
+# (that is against Google's terms). Send public data only.
+set -euo pipefail
+HOST=${AGY_HOST:-desktop}
+BIN=${AGY_BIN:-'~/.local/bin/agy'}
+ENVS='env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY -u SSH_AUTH_SOCK XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus'
+if [ "${1:-}" = "--models" ]; then
+  exec ssh "$HOST" "cd /tmp && $ENVS $BIN models"
+fi
+[ -n "${1:-}" ] || { echo "usage: pc-agy \"prompt\" [model]" >&2; exit 2; }
+PROMPT=$1; MODEL=${2:-${AGY_MODEL:-Gemini 4 Neon (Medium)}}; TO=${PC_AGY_TIMEOUT:-5m}
+exec ssh "$HOST" "cd /tmp && $ENVS $BIN -p $(printf %q "$PROMPT") --model $(printf %q "$MODEL") --print-timeout $TO"

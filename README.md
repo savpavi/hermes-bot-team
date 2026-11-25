@@ -98,6 +98,15 @@ These are the parts I actually spent time on — the code follows from them.
 7. **Fits the hardware.** Services stay under ~5 GB RAM, heavy jobs run at night, no local LLM.
 8. **Silence means healthy.** [`health.sh`](tools/health/) checks temperatures, disk SMART, RAM, network,
    DNS and backups every 10 minutes and only messages me when something is wrong (deduplicated for 6 h).
+9. **The notes vault is the shared memory between agents.** Claude Code on my desktop and the bots
+   on the server can't see each other's memory. One short shared note covers standing decisions,
+   the machine map and who does what, and every agent reads it at the start of a session.
+   Both sides' chat logs are exported to the vault every hour by plain scripts (no model), so
+   "I told the other agent about this" can be looked up. An archived reply doesn't count as
+   proof that something was done; the canonical note does.
+10. **Subscriptions only through their official clients.** A consumer AI subscription is used
+    through the vendor's own CLI ([`agy-bridge`](tools/agy-bridge/)), never by moving its login
+    into another tool.
 
 ## Hardware & stack
 
@@ -106,7 +115,7 @@ These are the parts I actually spent time on — the code follows from them.
 | Machine | 2016 laptop (i7-6500U, 8 GB RAM, 1 TB HDD, Wi-Fi), lid closed, battery as a built-in UPS |
 | OS | Debian 13 |
 | Agent framework | Hermes Agent — gateway, profiles, cron, skills, MCP |
-| Models | Mix of hosted providers; small model for cron, larger for chat |
+| Models | Mix of hosted providers; small model for cron, larger for chat; Gemini through the official Antigravity CLI on the desktop |
 | Messaging | Telegram (one bot per profile) |
 | Network | Tailscale; Caddy for tailnet-only HTTPS dashboards; AdGuard Home as tailnet DNS |
 | Notes | Obsidian vault, synced with Syncthing, auto-committed to git every 15 min |
@@ -123,6 +132,7 @@ tools/
   secret-gate/             leakcheck.py + sync.sh — push config to git only if no secret leaks
   skills-gate/             gate.py — approval gate between synced skills and live bots
   health/                  health.sh + notify.sh — 10-minute health check with deduplicated alerts
+  agy-bridge/              pc-agy — run the Antigravity (Gemini) CLI on the desktop from the server
 ```
 
 The tools are small and standalone; paths are configurable through environment variables.
@@ -139,6 +149,16 @@ My real configuration lives in a separate private repository.
   "say nothing if nothing changed" made the team usable day to day.
 - **Treat synced text as untrusted input.** Anything that can change outside the server (notes,
   mail, web pages) goes through a gate or is read, never executed.
+- **Don't update the agent from inside the agent.** A `hermes update` started from a chat (even
+  inside tmux) lives in the gateway's process group. The gateway restart then kills it halfway,
+  and the install is left with a stale lock and one service still running old code.
+  `systemd-run --user` puts it outside the gateway, so the restart can't touch it.
+- **"It forgets what I said" wasn't a compression problem.** With a 1M-token model, a 50 %
+  compression threshold is already 500K tokens, so raising it only makes every reply more
+  expensive. The real fix was starting a new session when the topic changes.
+- **Upgrade cron models on evidence.** When one daily digest contradicted another, I moved that
+  single job to the big model and compared one run side by side before deciding. The other
+  jobs stayed on the small model.
 
 ## License
 
